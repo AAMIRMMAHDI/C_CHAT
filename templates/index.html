@@ -205,7 +205,7 @@
             display: flex;
             gap: 0.5rem;
             position: absolute;
-            top: 10px;
+            top: 0px;
             left: 10px;
             z-index: 30;
         }
@@ -404,7 +404,29 @@
                 padding: 0.8rem;
             }
         }
-    </style>
+    
+/* ✅ نسخه جدید برای آیکون‌های دانلود */
+.download-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: #40c4ff;
+    border-radius: 50%;
+    background: rgba(64, 196, 255, 0.25);
+    box-shadow: 0 0 8px rgba(64, 196, 255, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+.download-icon:hover {
+    background: rgba(64, 196, 255, 0.5);
+    box-shadow: 0 0 12px rgba(64, 196, 255, 0.6), 0 0 20px rgba(64, 196, 255, 0.4);
+    transform: scale(1.15) rotate(5deg);
+}
+
+</style>
 </head>
 <body class="gradient-bg">
     <div id="chat-sidebar" class="glass-effect">
@@ -423,10 +445,11 @@
         <div class="p-3">
             <div class="search-container">
                 <div class="download-icons">
-                    <a href="https://web-chat-mbai.onrender.com/" class="download-icon" title="دانلود نسخه وب"><i class="bi bi-globe"></i></a>
-                    <a href="https://download1531.mediafire.com/2f685mwdoqpgQtv4u5SD-NH6AD-O-V2yTXXg5DUh6lIxFXYQwKzBCt3uu5M4PmlD7Hyl3tia5SPbZgT9jen5Di1H9WypeI5BA_DekIGgCrN3B2NyPPbFRVZ-sdCcKK0R0J3TDBDqFUgQddtj_NDP_-Dh-odeKl2yOtnPrukMCY0rig/kuwthv9istlo4nw/app.apk" class="download-icon" title="دانلود نسخه اندروید"><i class="bi bi-android2"></i></a>
+                    <a href="https://aamirmmahdi.github.io/C/" class="download-icon" title="دانلود نسخه وب"><i class="bi bi-globe"></i></a>
+                    <a href="https://www.mediafire.com/file/r8rl96qnii63z1h/app.apk/file" class="download-icon" title="دانلود نسخه اندروید"><i class="bi bi-android2"></i></a>
                     <a href="https://download856.mediafire.com/3csg8p22xligOFzmZENF4Aiz7-KNIuAt6APpBnw_t2WlrweyzteKkiZvYYAezu0k_R8wWmApmhDnwvYveezbWGAplPBdd1hZEL-u5UdDoOfOLdeHSrJpvcj1XHErUuCMfg7xJLRVq5RWaYKiGuROi8z3maLRhjfdRoIbmGyqsuFt5w/x221n3bupveqzwc/Setup_C_CHAT.exe" class="download-icon" title="دانلود نسخه ویندوز"><i class="bi bi-windows"></i></a>
                 </div>
+                <br>
                 <div class="relative">
                     <input id="search-input" type="text" placeholder="جستجو..." class="w-full p-2 pr-10 rounded-lg bg-gray-800 text-white glass-effect focus:outline-none">
                     <i class="bi bi-search absolute right-3 top-2.5 text-gray-400"></i>
