@@ -81,12 +81,14 @@ USE_I18N = True
 
 USE_TZ = True
 
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATIC_URL = '/static/'
-
-# تنظیمات مربوط به فایل‌های آپلود شده
-MEDIA_URL = '/media/'  # تغییر از /Uploads/ به /media/
-MEDIA_ROOT = BASE_DIR / 'media'  # تغییر از Uploads به media
-
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+STATICFILES_DIRS = [
+    BASE_DIR / 'static'  # دایرکتوری‌های اضافه برای فایل‌های استاتیک
+]
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
