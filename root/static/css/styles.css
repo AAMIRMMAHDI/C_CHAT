@@ -177,7 +177,7 @@ body {
     border-radius: 12px;
     padding: 1rem;
     width: 85%;
-    max-width: 350px;
+    max-width: 500px; /* افزایش عرض مودال‌ها */
     max-height: 80vh;
     overflow-y: auto;
     transform: translateY(20px);
@@ -252,8 +252,20 @@ body {
     border-radius: 8px;
     transition: all 0.3s ease;
 }
+.chat-item img {
+    width: 40px !important;
+    height: 40px !important;
+    object-fit: cover;
+    transition: none;
+}
 .chat-item:hover {
     background: rgba(64, 196, 255, 0.3);
+}
+#profile-image, #chat-image {
+    width: 40px !important;
+    height: 40px !important;
+    object-fit: cover;
+    transition: none;
 }
 .progress-circle {
     width: 20px;
@@ -294,7 +306,7 @@ body {
     transition: all 0.3s ease;
     opacity: 0;
     transform: translateY(-10px);
-    min-width: 150px;
+    min-width: 250px;
 }
 #header-menu.show {
     opacity: 1;
@@ -305,25 +317,163 @@ body {
     display: none;
 }
 #header-menu button {
-    display: block;
-    width: 100%;
-    text-align: right;
+    background: linear-gradient(135deg, rgba(64, 196, 255, 0.3), rgba(123, 44, 191, 0.3));
+    border-radius: 8px;
     padding: 0.5rem 1rem;
     color: #e0e0e0;
-    background: none;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.2s ease;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: background 0.2s ease, transform 0.2s ease;
 }
 #header-menu button:hover {
-    background: rgba(64, 196, 255, 0.3);
+    background: linear-gradient(135deg, rgba(64, 196, 255, 0.5), rgba(123, 44, 191, 0.5));
+    transform: translateY(-2px);
 }
 .notification {
     transition: all 0.3s ease;
     opacity: 0;
     transform: translateY(-10px);
     animation: fadeSlideIn 0.3s ease forwards;
+}
+.admin-badge {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    margin-right: 0.25rem;
+}
+.creator-badge {
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    margin-right: 0.25rem;
+}
+.member-item {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    align-items: center;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+.member-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+.member-info {
+    display: flex;
+    align-items: center;
+}
+.member-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-self: end;
+}
+.member-actions button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+.make-admin-btn {
+    background: rgba(59, 130, 246, 0.3);
+    color: #3b82f6;
+    border: none;
+}
+.remove-admin-btn {
+    background: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    border: none;
+}
+.remove-member-btn {
+    background: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    border: none;
+}
+.member-actions button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.group-settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: .4s;
+    border-radius: 24px;
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+input:checked + .slider {
+    background-color: #40c4ff;
+}
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+.join-request-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    margin-bottom: 0.3rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0.5rem;
+}
+.request-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.approve-request {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+    border: none;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+}
+.reject-request {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: none;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
 }
 @media (max-width: 640px) {
     body {
@@ -374,7 +524,7 @@ body {
     }
     .modal-content, .download-modal-content, .profile-modal-content {
         width: 90%;
-        max-width: 300px;
+        max-width: 350px;
         padding: 0.8rem;
         max-height: 85vh;
         border-radius: 10px;
@@ -399,7 +549,14 @@ body {
         top: 50px;
         left: 8px;
         width: calc(100% - 16px);
-        max-width: 200px;
+        max-width: 250px;
         padding: 0.8rem;
+    }
+    .member-item {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+    .member-actions {
+        flex-direction: column;
     }
 }

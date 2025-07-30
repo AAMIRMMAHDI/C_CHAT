@@ -10,6 +10,8 @@ let isFetching = false;
 let currentUserId = null;
 let currentMessageId = null;
 let currentIsSender = null;
+let currentGroupAdmins = [];
+let currentGroupCreator = null;
 
 gsap.from(".chat-window, .chat-item", { duration: 0.6, y: 20, opacity: 0, stagger: 0.05, ease: "power2.out" });
 
@@ -78,32 +80,31 @@ function checkStoredUser() {
     }
 }
 
-// اصلاح تابع startOnlineStatusPolling
 function startOnlineStatusPolling() {
-  if (!currentPrivateUserId) return;
-  
-  const checkStatus = () => {
-    fetch(`/api/users/${currentPrivateUserId}/`, {
-      headers: { 'X-CSRFToken': getCsrfToken() }
-    })
-    .then(response => {
-      if (!response.ok) return;
-      return response.json();
-    })
-    .then(data => {
-      if (!data) return;
-      const statusIndicator = document.querySelector(`[data-user-id="${currentPrivateUserId}"] .rounded-full`);
-      if (statusIndicator) {
-        // اگر endpoint وضعیت وجود ندارد، از یک مقدار پیش‌فرض استفاده کنید
-        statusIndicator.className = `w-3 h-3 rounded-full bg-gray-500`;
-      }
-    })
-    .catch(() => {});
-  };
+    if (!currentPrivateUserId) return;
+    
+    const checkStatus = () => {
+        fetch(`/api/users/${currentPrivateUserId}/`, {
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        })
+        .then(response => {
+            if (!response.ok) return;
+            return response.json();
+        })
+        .then(data => {
+            if (!data) return;
+            const statusIndicator = document.querySelector(`[data-user-id="${currentPrivateUserId}"] .rounded-full`);
+            if (statusIndicator) {
+                statusIndicator.className = `w-3 h-3 rounded-full ${data.is_online ? 'bg-green-500' : 'bg-gray-500'}`;
+            }
+        })
+        .catch(() => {});
+    };
 
-  checkStatus();
-  setInterval(checkStatus, 10000);
+    checkStatus();
+    setInterval(checkStatus, 10000);
 }
+
 function saveMessages() {
     if (!currentTab || (!currentGroupId && !currentPrivateUserId)) return;
     const messages = [];
@@ -213,10 +214,6 @@ function showContextMenu(event, messageId, isSender, isUploading = false) {
     contextMenu.style.top = `${event.clientY}px`;
     contextMenu.style.left = `${event.clientX}px`;
 }
-
-
-
-
 
 function hideContextMenu() {
     document.getElementById('context-menu').style.display = 'none';
@@ -359,6 +356,7 @@ function replyToMessage(messageId) {
         sendMessageWithFiles([], replyContent);
     }
 }
+
 async function forwardMessage(messageId) {
     const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
     const content = messageElement.querySelector('.message-content')?.textContent || '';
@@ -383,14 +381,12 @@ async function forwardMessage(messageId) {
 
         currentPrivateUserId = userData.users[0].id;
         
-        // اگر فایلی وجود ندارد، فقط متن را ارسال کنید
         if (files.length === 0) {
             await sendMessageWithFiles([], content);
             showNotification('پیام ارسال شد', 'success');
             return;
         }
 
-        // ارسال فایل‌ها به صورت مستقیم
         const fileIds = [];
         for (const file of files) {
             const response = await fetch(file.src);
@@ -419,8 +415,6 @@ async function forwardMessage(messageId) {
     }
 }
 
-
-
 function getMessageContentType(messageElement) {
     if (messageElement.querySelector('img')) return 'image';
     if (messageElement.querySelector('video')) return 'video';
@@ -428,6 +422,7 @@ function getMessageContentType(messageElement) {
     if (messageElement.querySelector('a[href]')) return 'file';
     return 'text';
 }
+
 function showUserProfile() {
     fetch('/api/users/current/', {
         headers: { 'X-CSRFToken': getCsrfToken() }
@@ -485,11 +480,45 @@ function showChatProfile() {
             })
             .then(data => {
                 justOpenedModal = true;
+                currentGroupAdmins = data.admins || [];
+                currentGroupCreator = data.creator.id;
+                
                 document.getElementById('profile-modal-image').src = data.image || '/static/profiles/ICON_GROUP.jpg';
                 document.getElementById('profile-modal-title').textContent = data.name;
                 document.getElementById('profile-modal-username').textContent = '';
-                document.getElementById('profile-modal-description').textContent = data.description || '';
+                
+                let infoHtml = '';
+                if (data.show_info) {
+                    infoHtml += `<p class="text-sm text-gray-300 mb-2">${data.description || 'بدون توضیحات'}</p>`;
+                } else {
+                    infoHtml += `<p class="text-sm text-gray-300 mb-2">دسترسی به اطلاعات گروه محدود شده است</p>`;
+                }
+                
+                const isAdmin = currentGroupAdmins.some(admin => admin.id === currentUserId) || currentGroupCreator === currentUserId;
+                if (data.show_members || isAdmin) {
+                    infoHtml += `<div class="mt-3">
+                        <h4 class="text-sm font-semibold text-gray-400 mb-1">اعضای گروه:</h4>
+                        <div class="space-y-1 max-h-40 overflow-y-auto">`;
+                    
+                    data.members.forEach(member => {
+                        const isAdmin = currentGroupAdmins.some(admin => admin.id === member.id);
+                        const isCreator = member.id === currentGroupCreator;
+                        infoHtml += `<div class="flex items-center p-1 bg-gray-800 rounded">
+                            <img src="${member.profile_image || '/static/profiles/ICON_PROF.jpg'}" class="w-6 h-6 rounded-full mr-2">
+                            <span class="text-xs ${isCreator ? 'text-green-400' : isAdmin ? 'text-blue-400' : 'text-gray-300'}">${member.display_name || member.username}</span>
+                            ${isCreator ? '<span class="text-xs text-gray-500 mr-1">(سازنده)</span>' : 
+                              isAdmin ? '<span class="text-xs text-gray-500 mr-1">(مدیر)</span>' : ''}
+                        </div>`;
+                    });
+                    
+                    infoHtml += `</div></div>`;
+                } else {
+                    infoHtml += `<p class="text-sm text-gray-500 mt-2">لیست اعضا قابل نمایش نیست</p>`;
+                }
+                
+                document.getElementById('profile-modal-description').innerHTML = infoHtml;
                 document.getElementById('profile-modal-edit').classList.add('hidden');
+                
                 const modal = document.getElementById('profile-modal');
                 modal.classList.remove('hidden');
                 setTimeout(() => modal.querySelector('.modal-content').classList.add('show'), 10);
@@ -702,12 +731,6 @@ function fetchMessages() {
         });
 }
 
-
-
-
-
-
-
 function fetchChats() {
     if (currentTab === 'private') {
         fetch('/api/users/chatted/', {
@@ -760,6 +783,200 @@ function startPolling() {
     pollingInterval = setInterval(fetchMessages, 5000);
 }
 
+function openGroupSettings() {
+    fetch(`/api/groups/${currentGroupId}/`, {
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('group-settings-show-members').checked = data.show_members;
+            document.getElementById('group-settings-show-info').checked = data.show_info;
+            document.getElementById('group-settings-allow-join').checked = data.allow_join_requests;
+            
+            justOpenedModal = true;
+            const modal = document.getElementById('group-settings-modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.querySelector('.modal-content').classList.add('show'), 10);
+        })
+        .catch(error => {
+            showNotification(`خطا در دریافت تنظیمات گروه: ${error.message}`, 'error');
+        });
+}
+
+function saveGroupSettings() {
+    const showMembers = document.getElementById('group-settings-show-members').checked;
+    const showInfo = document.getElementById('group-settings-show-info').checked;
+    const allowJoin = document.getElementById('group-settings-allow-join').checked;
+
+    fetch(`/api/groups/${currentGroupId}/settings/`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            show_members: showMembers,
+            show_info: showInfo,
+            allow_join_requests: allowJoin
+        })
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'error') throw new Error(data.message);
+            document.getElementById('group-settings-modal').classList.add('hidden');
+            showNotification('تنظیمات گروه با موفقیت ذخیره شد', 'success');
+        })
+        .catch(error => {
+            showNotification(`خطا در ذخیره تنظیمات گروه: ${error.message}`, 'error');
+        });
+}
+
+function openManageMembers() {
+    fetch(`/api/groups/${currentGroupId}/`, {
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    })
+        .then(response => response.json())
+        .then(data => {
+            currentGroupAdmins = data.admins || [];
+            currentGroupCreator = data.creator.id;
+            
+            const membersList = document.getElementById('group-members-list');
+            membersList.innerHTML = '';
+            
+            data.members.forEach(member => {
+                const isCreator = member.id === currentGroupCreator;
+                const isAdmin = currentGroupAdmins.some(admin => admin.id === member.id);
+                const isCurrentUser = member.id === currentUserId;
+                
+                const memberItem = document.createElement('div');
+                memberItem.className = 'member-item';
+                
+                let adminControls = '';
+                if (!isCreator && !isCurrentUser && (currentGroupCreator === currentUserId || 
+                    (currentGroupAdmins.some(admin => admin.id === currentUserId) && !isAdmin))) {
+                    adminControls = `
+                        <div class="member-actions">
+                            ${isAdmin ? 
+                                `<button onclick="removeAdmin('${member.id}')" class="remove-admin-btn">
+                                    <i class="bi bi-person-dash"></i> حذف ادمین
+                                </button>` : 
+                                `<button onclick="makeAdmin('${member.id}')" class="make-admin-btn">
+                                    <i class="bi bi-person-plus"></i> افزودن ادمین
+                                </button>`}
+                            <button onclick="removeMember('${member.id}')" class="remove-member-btn">
+                                <i class="bi bi-trash"></i> حذف عضو
+                            </button>
+                        </div>
+                    `;
+                }
+                
+                memberItem.innerHTML = `
+                    <div class="member-info">
+                        <img src="${member.profile_image || '/static/profiles/ICON_PROF.jpg'}" class="w-8 h-8 rounded-full mr-2">
+                        <span class="${isCreator ? 'text-green-400' : isAdmin ? 'text-blue-400' : 'text-gray-300'}">
+                            ${member.display_name || member.username}
+                            ${isCreator ? '<span class="creator-badge">سازنده</span>' : 
+                             isAdmin ? '<span class="admin-badge">مدیر</span>' : ''}
+                        </span>
+                    </div>
+                    ${adminControls}
+                `;
+                
+                membersList.appendChild(memberItem);
+            });
+            
+            justOpenedModal = true;
+            const modal = document.getElementById('manage-members-modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.querySelector('.modal-content').classList.add('show'), 10);
+        })
+        .catch(error => {
+            showNotification(`خطا در دریافت لیست اعضا: ${error.message}`, 'error');
+        });
+}
+
+function makeAdmin(userId) {
+    fetch(`/api/groups/${currentGroupId}/admins/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            member_id: userId,
+            action: 'add'
+        })
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'error') throw new Error(data.message);
+            showNotification('کاربر با موفقیت به ادمین‌ها اضافه شد', 'success');
+            openManageMembers();
+        })
+        .catch(error => {
+            showNotification(`خطا در افزودن ادمین: ${error.message}`, 'error');
+        });
+}
+
+function removeAdmin(userId) {
+    fetch(`/api/groups/${currentGroupId}/admins/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            member_id: userId,
+            action: 'remove'
+        })
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'error') throw new Error(data.message);
+            showNotification('کاربر با موفقیت از ادمین‌ها حذف شد', 'success');
+            openManageMembers();
+        })
+        .catch(error => {
+            showNotification(`خطا در حذف ادمین: ${error.message}`, 'error');
+        });
+}
+
+function removeMember(userId) {
+    if (!confirm('آیا مطمئن هستید که می‌خواهید این کاربر را از گروه حذف کنید؟')) return;
+    
+    fetch(`/api/groups/${currentGroupId}/members/`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            member_id: userId
+        })
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'error') throw new Error(data.message);
+            showNotification('کاربر با موفقیت از گروه حذف شد', 'success');
+            openManageMembers();
+        })
+        .catch(error => {
+            showNotification(`خطا در حذف عضو: ${error.message}`, 'error');
+        });
+}
+
 document.getElementById('sidebar-toggle').addEventListener('click', () => {
     document.getElementById('chat-sidebar').classList.remove('open');
 });
@@ -781,6 +998,8 @@ document.getElementById('private-tab').addEventListener('click', () => {
         document.getElementById('groups').classList.add('hidden');
         document.getElementById('chat-title').textContent = 'چت خصوصی';
         document.getElementById('chat-image').src = '/static/profiles/ICON_PROF.jpg';
+        document.getElementById('group-settings-btn').classList.add('hidden');
+        document.getElementById('manage-members-btn').classList.add('hidden');
         fetchChats();
     }
 });
@@ -798,6 +1017,8 @@ document.getElementById('group-tab').addEventListener('click', () => {
         document.getElementById('private-chats').classList.add('hidden');
         document.getElementById('chat-title').textContent = 'چت گروهی';
         document.getElementById('chat-image').src = '/static/profiles/ICON_GROUP.jpg';
+        document.getElementById('group-settings-btn').classList.add('hidden');
+        document.getElementById('manage-members-btn').classList.add('hidden');
         fetchChats();
     }
 });
@@ -816,9 +1037,12 @@ document.getElementById('sidebar-content').addEventListener('click', (e) => {
                 .then(data => {
                     document.getElementById('chat-title').textContent = data.display_name || data.username;
                     document.getElementById('chat-image').src = data.profile_image || '/static/profiles/ICON_PROF.jpg';
+                    document.getElementById('group-settings-btn').classList.add('hidden');
+                    document.getElementById('manage-members-btn').classList.add('hidden');
                     loadMessages();
                     fetchMessages();
                     startPolling();
+                    startOnlineStatusPolling();
                 });
         } else {
             currentGroupId = parseInt(chatItem.dataset.groupId);
@@ -828,8 +1052,22 @@ document.getElementById('sidebar-content').addEventListener('click', (e) => {
             })
                 .then(response => response.json())
                 .then(data => {
+                    currentGroupAdmins = data.admins || [];
+                    currentGroupCreator = data.creator.id;
+                    
                     document.getElementById('chat-title').textContent = data.name;
                     document.getElementById('chat-image').src = data.image || '/static/profiles/ICON_GROUP.jpg';
+                    
+                    // نمایش دکمه‌های مدیریت اگر کاربر ادمین یا سازنده باشد
+                    const isAdmin = currentGroupAdmins.some(admin => admin.id === currentUserId) || currentGroupCreator === currentUserId;
+                    if (isAdmin) {
+                        document.getElementById('group-settings-btn').classList.remove('hidden');
+                        document.getElementById('manage-members-btn').classList.remove('hidden');
+                    } else {
+                        document.getElementById('group-settings-btn').classList.add('hidden');
+                        document.getElementById('manage-members-btn').classList.add('hidden');
+                    }
+                    
                     loadMessages();
                     fetchMessages();
                     startPolling();
@@ -864,6 +1102,22 @@ document.getElementById('join-group').addEventListener('click', (e) => {
     const modal = document.getElementById('join-group-modal');
     modal.classList.remove('hidden');
     setTimeout(() => modal.querySelector('.modal-content').classList.add('show'), 10);
+});
+
+document.getElementById('group-settings-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    justOpenedModal = true;
+    document.getElementById('header-menu').classList.add('hidden');
+    document.getElementById('header-menu').classList.remove('show');
+    openGroupSettings();
+});
+
+document.getElementById('manage-members-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    justOpenedModal = true;
+    document.getElementById('header-menu').classList.add('hidden');
+    document.getElementById('header-menu').classList.remove('show');
+    openManageMembers();
 });
 
 document.getElementById('logout').addEventListener('click', (e) => {
@@ -961,14 +1215,23 @@ document.getElementById('create-group-submit').addEventListener('click', () => {
     const description = document.getElementById('group-description').value.trim();
     const password = document.getElementById('group-password').value;
     const image = document.getElementById('group-image').files[0];
+    const showMembers = document.getElementById('show-members-checkbox').checked;
+    const showInfo = document.getElementById('show-info-checkbox').checked;
+    const allowJoin = document.getElementById('allow-join-checkbox').checked;
+    
     if (!name) {
         showNotification('نام گروه الزامی است', 'error');
         return;
     }
+    
     formData.append('name', name);
     if (description) formData.append('description', description);
     if (password) formData.append('password', password);
     if (image) formData.append('image', image);
+    formData.append('show_members', showMembers);
+    formData.append('show_info', showInfo);
+    formData.append('allow_join_requests', allowJoin);
+    
     fetch('/api/groups/', {
         method: 'POST',
         headers: { 'X-CSRFToken': getCsrfToken() },
@@ -1051,6 +1314,19 @@ document.getElementById('join-group-cancel').addEventListener('click', () => {
     document.getElementById('join-group-modal').classList.add('hidden');
 });
 
+document.getElementById('save-group-settings').addEventListener('click', saveGroupSettings);
+document.getElementById('cancel-group-settings').addEventListener('click', () => {
+    document.getElementById('group-settings-modal').classList.add('hidden');
+});
+
+document.getElementById('save-members-changes').addEventListener('click', () => {
+    document.getElementById('manage-members-modal').classList.add('hidden');
+});
+
+document.getElementById('cancel-members-changes').addEventListener('click', () => {
+    document.getElementById('manage-members-modal').classList.add('hidden');
+});
+
 document.getElementById('download-cancel').addEventListener('click', () => {
     document.getElementById('download-modal').classList.add('hidden');
 });
@@ -1111,7 +1387,7 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 
 document.addEventListener('click', (e) => {
     if (!justOpenedModal) {
-        const modals = document.querySelectorAll('#login-modal, #edit-profile-modal, #create-group-modal, #join-group-modal, #download-modal, #profile-modal');
+        const modals = document.querySelectorAll('#login-modal, #edit-profile-modal, #create-group-modal, #join-group-modal, #download-modal, #profile-modal, #group-settings-modal, #manage-members-modal');
         modals.forEach(modal => {
             if (!modal.classList.contains('hidden') && !modal.contains(e.target)) {
                 modal.classList.add('hidden');

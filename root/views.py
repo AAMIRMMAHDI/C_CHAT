@@ -4,8 +4,8 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import User, Group, Message, File
-from .serializers import UserSerializer, GroupSerializer, MessageSerializer, FileSerializer
+from .models import User, Group, Message, File, GroupJoinRequest
+from .serializers import UserSerializer, GroupSerializer, MessageSerializer, FileSerializer, GroupJoinRequestSerializer
 import os
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -180,7 +180,7 @@ class GroupView(APIView):
             return Response(cached_groups)
 
         groups = Group.objects.filter(members__id=user_id)
-        serializer = GroupSerializer(groups, many=True)
+        serializer = GroupSerializer(groups, many=True, context={'request': request})
         cache.set(cache_key, serializer.data, timeout=60*15)
         return Response(serializer.data)
 
@@ -197,6 +197,11 @@ class GroupView(APIView):
         description = data.get('description', '')
         password = data.get('password', '')
         image = request.FILES.get('image')
+        
+        # تبدیل مقادیر boolean به درستی
+        show_members = data.get('show_members', 'true').lower() == 'true'
+        show_info = data.get('show_info', 'true').lower() == 'true'
+        allow_join_requests = data.get('allow_join_requests', 'true').lower() == 'true'
 
         if not name:
             return Response(
@@ -204,11 +209,20 @@ class GroupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        group = Group(name=name, description=description, password=password, creator_id=user_id)
+        group = Group(
+            name=name, 
+            description=description, 
+            password=password, 
+            creator_id=user_id,
+            show_members=show_members,
+            show_info=show_info,
+            allow_join_requests=allow_join_requests
+        )
         if image:
             group.image = image
         group.save()
         group.members.add(user_id)
+        group.admins.add(user_id)
         cache.delete(f'groups_{user_id}')
         return Response({'status': 'success', 'group_id': group.id})
 
@@ -220,8 +234,15 @@ class GroupDetailView(APIView):
                 {'status': 'error', 'message': 'کاربر وارد نشده است'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-        group = get_object_or_404(Group, pk=pk, members__id=user_id)
-        serializer = GroupSerializer(group)
+        
+        group = get_object_or_404(Group, pk=pk)
+        if not group.members.filter(id=user_id).exists() and not group.allow_join_requests:
+            return Response(
+                {'status': 'error', 'message': 'شما عضو این گروه نیستید و درخواست عضویت غیرفعال است'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        serializer = GroupSerializer(group, context={'request': request})
         return Response(serializer.data)
 
 class GroupSearchView(APIView):
@@ -244,21 +265,194 @@ class GroupJoinView(APIView):
         password = request.data.get('password', '')
 
         group = get_object_or_404(Group, id=group_id)
-        if group.password and not group.check_password(password):
-            return Response(
-                {'status': 'error', 'message': 'رمز عبور اشتباه است'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
+        
         if group.members.filter(id=user_id).exists():
             return Response(
                 {'status': 'error', 'message': 'شما قبلاً عضو این گروه هستید'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if group.password and not group.check_password(password):
+            if not group.allow_join_requests:
+                return Response(
+                    {'status': 'error', 'message': 'رمز عبور اشتباه است و درخواست عضویت غیرفعال است'},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # ایجاد درخواست عضویت
+            request, created = GroupJoinRequest.objects.get_or_create(
+                group=group,
+                user_id=user_id,
+                defaults={'status': 'pending'}
+            )
+            
+            if created:
+                return Response({
+                    'status': 'success', 
+                    'message': 'درخواست عضویت شما ارسال شد و در انتظار تایید است'
+                })
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'شما قبلاً درخواست عضویت داده‌اید'
+                })
+
         group.members.add(user_id)
         cache.delete(f'groups_{user_id}')
         return Response({'status': 'success', 'group_id': group.id})
+
+class GroupAdminsView(APIView):
+    def post(self, request, pk):
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response(
+                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        group = get_object_or_404(Group, pk=pk)
+        if group.creator_id != user_id:
+            return Response(
+                {'status': 'error', 'message': 'فقط سازنده گروه می‌تواند ادمین‌ها را مدیریت کند'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        member_id = request.data.get('member_id')
+        action = request.data.get('action')  # 'add' or 'remove'
+        
+        if not member_id:
+            return Response(
+                {'status': 'error', 'message': 'شناسه کاربر الزامی است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        member = get_object_or_404(User, pk=member_id)
+        
+        if not group.members.filter(id=member_id).exists():
+            return Response(
+                {'status': 'error', 'message': 'کاربر عضو گروه نیست'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if action == 'add':
+            if group.admins.filter(id=member_id).exists():
+                return Response(
+                    {'status': 'error', 'message': 'کاربر قبلاً ادمین است'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            group.admins.add(member_id)
+            return Response({
+                'status': 'success',
+                'message': 'کاربر با موفقیت به ادمین‌ها اضافه شد'
+            })
+        elif action == 'remove':
+            if not group.admins.filter(id=member_id).exists():
+                return Response(
+                    {'status': 'error', 'message': 'کاربر ادمین نیست'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            group.admins.remove(member_id)
+            return Response({
+                'status': 'success',
+                'message': 'کاربر با موفقیت از ادمین‌ها حذف شد'
+            })
+        else:
+            return Response(
+                {'status': 'error', 'message': 'عمل نامعتبر است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class GroupSettingsView(APIView):
+    def patch(self, request, pk):
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response(
+                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        group = get_object_or_404(Group, pk=pk)
+        if not group.is_admin(User.objects.get(id=user_id)):
+            return Response(
+                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند تنظیمات گروه را تغییر دهند'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        data = request.data
+        if 'show_members' in data:
+            group.show_members = str(data['show_members']).lower() == 'true'
+        if 'show_info' in data:
+            group.show_info = str(data['show_info']).lower() == 'true'
+        if 'allow_join_requests' in data:
+            group.allow_join_requests = str(data['allow_join_requests']).lower() == 'true'
+        
+        group.save()
+        cache.delete(f'groups_{user_id}')
+        return Response({
+            'status': 'success',
+            'message': 'تنظیمات گروه با موفقیت به‌روزرسانی شد'
+        })
+
+class GroupJoinRequestView(APIView):
+    def get(self, request, pk):
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response(
+                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        group = get_object_or_404(Group, pk=pk)
+        if not group.is_admin(User.objects.get(id=user_id)):
+            return Response(
+                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند درخواست‌های عضویت را مشاهده کنند'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        requests = GroupJoinRequest.objects.filter(group=group, status='pending')
+        serializer = GroupJoinRequestSerializer(requests, many=True)
+        return Response({'requests': serializer.data})
+
+    def post(self, request, pk):
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response(
+                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        group = get_object_or_404(Group, pk=pk)
+        if not group.is_admin(User.objects.get(id=user_id)):
+            return Response(
+                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند درخواست‌های عضویت را تایید کنند'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        request_id = request.data.get('request_id')
+        action = request.data.get('action')  # 'approve' or 'reject'
+
+        join_request = get_object_or_404(GroupJoinRequest, id=request_id, group=group)
+        
+        if action == 'approve':
+            group.members.add(join_request.user)
+            join_request.status = 'approved'
+            join_request.save()
+            return Response({
+                'status': 'success',
+                'message': 'درخواست عضویت تایید شد'
+            })
+        elif action == 'reject':
+            join_request.status = 'rejected'
+            join_request.save()
+            return Response({
+                'status': 'success',
+                'message': 'درخواست عضویت رد شد'
+            })
+        else:
+            return Response(
+                {'status': 'error', 'message': 'عمل نامعتبر است'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class MessageView(APIView):
     def get(self, request):

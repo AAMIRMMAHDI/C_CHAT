@@ -58,10 +58,24 @@
             </div>
             <div class="flex items-center space-x-2 space-x-reverse relative">
                 <button id="header-menu-toggle" class="glass-button"><i class="bi bi-three-dots-vertical"></i></button>
-                <div id="header-menu" class="hidden">
-                    <button id="create-group" class="flex items-center gap-2"><i class="bi bi-people-fill"></i> ایجاد گروه</button>
-                    <button id="join-group" class="flex items-center gap-2"><i class="bi bi-person-plus-fill"></i> پیوستن به گروه</button>
-                    <button id="logout" class="flex items-center gap-2"><i class="bi bi-box-arrow-right"></i> خروج</button>
+                <div id="header-menu" class="hidden absolute top-12 left-0 bg-gray-800 backdrop-filter blur-12px rounded-lg shadow-lg p-2 min-w-[200px] z-10">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="create-group" class="glass-button text-right py-2 px-4 hover:bg-blue-500">
+                            <i class="bi bi-people-fill"></i> ایجاد گروه
+                        </button>
+                        <button id="join-group" class="glass-button text-right py-2 px-4 hover:bg-blue-500">
+                            <i class="bi bi-person-plus-fill"></i> پیوستن به گروه
+                        </button>
+                        <button id="group-settings-btn" class="glass-button text-right py-2 px-4 hover:bg-blue-500 hidden">
+                            <i class="bi bi-gear-fill"></i> تنظیمات گروه
+                        </button>
+                        <button id="manage-members-btn" class="glass-button text-right py-2 px-4 hover:bg-blue-500 hidden">
+                            <i class="bi bi-people-fill"></i> مدیریت اعضا
+                        </button>
+                        <button id="logout" class="glass-button text-right py-2 px-4 hover:bg-red-500">
+                            <i class="bi bi-box-arrow-right"></i> خروج
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -105,6 +119,27 @@
             <textarea id="group-description" placeholder="توضیحات گروه (اختیاری)" class="w-full p-2 mb-2 rounded-lg bg-gray-800 text-white glass-effect focus:outline-none"></textarea>
             <input id="group-password" type="password" placeholder="رمز عبور گروه (اختیاری)" class="w-full p-2 mb-2 rounded-lg bg-gray-800 text-white glass-effect focus:outline-none">
             <input id="group-image" type="file" accept="image/*" class="w-full p-2 mb-2 rounded-lg bg-gray-800 text-white glass-effect">
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">نمایش اعضای گروه</span>
+                <label class="switch">
+                    <input id="show-members-checkbox" type="checkbox" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">نمایش اطلاعات گروه</span>
+                <label class="switch">
+                    <input id="show-info-checkbox" type="checkbox" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">اجازه درخواست عضویت</span>
+                <label class="switch">
+                    <input id="allow-join-checkbox" type="checkbox" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
             <div class="flex gap-2">
                 <button id="create-group-submit" class="glass-button"><i class="bi bi-check-circle"></i> ایجاد</button>
                 <button id="create-group-cancel" class="glass-button bg-red-600 hover:bg-red-700"><i class="bi bi-x-circle"></i> لغو</button>
@@ -124,6 +159,46 @@
             </div>
         </div>
     </div>
+    <div id="group-settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-30">
+        <div class="modal-content w-[90%] max-w-[500px]">
+            <h2 class="text-xl font-bold mb-3 text-white"><i class="bi bi-gear-fill me-1"></i> تنظیمات گروه</h2>
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">نمایش اعضای گروه</span>
+                <label class="switch">
+                    <input id="group-settings-show-members" type="checkbox">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">نمایش اطلاعات گروه</span>
+                <label class="switch">
+                    <input id="group-settings-show-info" type="checkbox">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="group-settings-item">
+                <span class="text-sm text-gray-300">اجازه درخواست عضویت</span>
+                <label class="switch">
+                    <input id="group-settings-allow-join" type="checkbox">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="flex gap-2 mt-3">
+                <button id="save-group-settings" class="glass-button"><i class="bi bi-check-circle"></i> ذخیره</button>
+                <button id="cancel-group-settings" class="glass-button bg-red-600 hover:bg-red-700"><i class="bi bi-x-circle"></i> لغو</button>
+            </div>
+        </div>
+    </div>
+    <div id="manage-members-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-30">
+        <div class="modal-content w-[90%] max-w-[500px]">
+            <h2 class="text-xl font-bold mb-3 text-white"><i class="bi bi-people-fill me-1"></i> مدیریت اعضای گروه</h2>
+            <div id="group-members-list" class="max-h-60 overflow-y-auto mb-3"></div>
+            <div class="flex gap-2">
+                <button id="save-members-changes" class="glass-button"><i class="bi bi-check-circle"></i> ذخیره</button>
+                <button id="cancel-members-changes" class="glass-button bg-red-600 hover:bg-red-700"><i class="bi bi-x-circle"></i> لغو</button>
+            </div>
+        </div>
+    </div>
     <div id="download-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-30">
         <div class="modal-content">
             <h2 class="text-lg font-bold mb-3 text-white"><i class="bi bi-download me-1"></i> دانلود فایل</h2>
@@ -140,16 +215,14 @@
             <img id="profile-modal-image" src="/static/profiles/ICON_PROF.jpg" alt="Profile" class="w-20 h-20 rounded-full object-cover mb-3 mx-auto">
             <h2 id="profile-modal-title" class="text-lg font-bold mb-2 text-white text-center"></h2>
             <p id="profile-modal-username" class="text-gray-300 mb-2 text-center"></p>
-            <p id="profile-modal-description" class="text-gray-300 mb-3 text-center"></p>
+            <div id="profile-modal-description" class="text-gray-300 mb-3 text-center"></div>
             <div class="flex gap-2 justify-center">
                 <button id="profile-modal-edit" class="glass-button hidden"><i class="bi bi-pencil-square"></i> ویرایش پروفایل</button>
                 <button id="profile-modal-close" class="glass-button bg-red-600 hover:bg-red-700"><i class="bi bi-x-circle"></i> بستن</button>
             </div>
         </div>
     </div>
-    <div id="context-menu" class="context-menu hidden">
-        <!-- محتوا به صورت دینامیک توسط JavaScript پر می‌شود -->
-    </div>
+    <div id="context-menu" class="context-menu hidden"></div>
     <div id="notifications" class="fixed top-3 left-3 right-3 z-40"></div>
 
     <script src="{% static 'js/script.js' %}"></script>

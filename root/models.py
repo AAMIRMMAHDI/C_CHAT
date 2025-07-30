@@ -41,8 +41,12 @@ class Group(models.Model):
     password = models.CharField(max_length=128, blank=True)
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_groups')
     members = models.ManyToManyField(User, related_name='groups')
+    admins = models.ManyToManyField(User, related_name='admin_groups', blank=True)
     image = models.ImageField(upload_to='groups/', blank=True, null=True)
     created_at = models.DateTimeField(null=True, blank=True, auto_now_add=True)
+    show_members = models.BooleanField(default=True)
+    show_info = models.BooleanField(default=True)
+    allow_join_requests = models.BooleanField(default=True)
 
     def save(self, *args, **kwargs):
         if self.password and not self.password.startswith('pbkdf2_'):
@@ -53,6 +57,9 @@ class Group(models.Model):
         if not self.password:
             return not raw_password
         return check_password(raw_password, self.password)
+
+    def is_admin(self, user):
+        return self.admins.filter(id=user.id).exists() or self.creator_id == user.id
 
     def __str__(self):
         return self.name
@@ -109,3 +116,16 @@ class File(models.Model):
             models.Index(fields=['uploaded_at']),
             models.Index(fields=['file_type']),
         ]
+
+class GroupJoinRequest(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='join_requests')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_join_requests')
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=[
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ], default='pending')
+
+    class Meta:
+        unique_together = ('group', 'user')
