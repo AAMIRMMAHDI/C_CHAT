@@ -4,7 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'your-secret-key'  # کلید امنیتی خودت رو اینجا بذار
+SECRET_KEY = '561j5ht56y5h5rtj15rt51jtyj4h51rt+w5k6A9oyi754;'  
 
 DEBUG = True
 
@@ -87,11 +87,10 @@ STATIC_URL = '/static/'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 STATICFILES_DIRS = [
-    BASE_DIR / 'static'  # دایرکتوری‌های اضافه برای فایل‌های استاتیک
+    BASE_DIR / 'static' 
 ]
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# برای آپلود فایل‌های بزرگ
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 مگابایت
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5000 * 1024 * 1024 

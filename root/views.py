@@ -15,9 +15,47 @@ from django.core.cache import cache
 from PIL import Image
 import logging
 import random
+import threading
+import time
 
 logger = logging.getLogger(__name__)
 
+# IN-MEMORY LIST FOR TEMPORARILY STORING MESSAGES
+message_cache = []
+
+# FUNCTION TO FLUSH MESSAGES FROM CACHE TO DATABASE
+def flush_messages_to_db():
+    global message_cache
+    while True:
+        time.sleep(300)  # WAIT 5 MINUTES
+        if message_cache:
+            logger.info(f"FLUSHING {len(message_cache)} MESSAGES TO DATABASE")
+            try:
+                # SAVE MESSAGES TO DATABASE
+                for msg_data in message_cache:
+                    message = Message.objects.create(
+                        sender_id=msg_data['sender_id'],
+                        content=msg_data['content'],
+                        group_id=msg_data.get('group_id'),
+                        recipient_id=msg_data.get('recipient_id'),
+                        delivered_at=msg_data['delivered_at']
+                    )
+                    # ATTACH FILES TO MESSAGE
+                    for file_id in msg_data.get('file_ids', []):
+                        file_obj = get_object_or_404(File, id=file_id)
+                        file_obj.message = message
+                        file_obj.save()
+                    # IF PRIVATE MESSAGE, SET READ_AT
+                    if msg_data.get('recipient_id'):
+                        message.read_at = timezone.now()
+                        message.save()
+                # CLEAR CACHE
+                message_cache = []
+                logger.info("MESSAGES FLUSHED TO DATABASE AND CACHE CLEARED")
+            except Exception as e:
+                logger.error(f"ERROR FLUSHING MESSAGES TO DATABASE: {str(e)}")
+
+# REST OF YOUR CODE UNCHANGED
 def index(request):
     return render(request, 'index.html')
 
@@ -30,7 +68,7 @@ class UserView(APIView):
 
         if not username or not password:
             return Response(
-                {'status': 'error', 'message': 'نام کاربری و رمز عبور الزامی است'},
+                {'status': 'ERROR', 'message': 'USERNAME AND PASSWORD ARE REQUIRED'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -42,7 +80,7 @@ class UserView(APIView):
                 user.last_login = timezone.now()
                 user.save()
                 return Response({
-                    'status': 'success',
+                    'status': 'SUCCESS',
                     'user_id': user.id,
                     'username': user.username,
                     'display_name': user.display_name,
@@ -51,7 +89,7 @@ class UserView(APIView):
                 })
             else:
                 return Response(
-                    {'status': 'error', 'message': 'رمز عبور اشتباه است'},
+                    {'status': 'ERROR', 'message': 'INCORRECT PASSWORD'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
 
@@ -61,7 +99,7 @@ class UserView(APIView):
         user.save()
         request.session['user_id'] = user.id
         return Response({
-            'status': 'success',
+            'status': 'SUCCESS',
             'user_id': user.id,
             'username': user.username,
             'display_name': user.display_name,
@@ -86,7 +124,7 @@ class UserCurrentView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         user = get_object_or_404(User, id=user_id)
@@ -97,7 +135,7 @@ class UserCurrentView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         user = get_object_or_404(User, id=user_id)
@@ -108,7 +146,7 @@ class UserCurrentView(APIView):
             user.profile_image = request.FILES['profile_image']
             user.save()
             return Response({
-                'status': 'success',
+                'status': 'SUCCESS',
                 'profile_image': user.profile_image.url if user.profile_image else None
             })
 
@@ -128,7 +166,7 @@ class UserCurrentView(APIView):
             user.description = description
         user.save()
         return Response({
-            'status': 'success',
+            'status': 'SUCCESS',
             'username': user.username,
             'display_name': user.display_name,
             'profile_image': user.profile_image.url if user.profile_image else None,
@@ -140,7 +178,7 @@ class UserChattedView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -170,7 +208,7 @@ class GroupView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -188,7 +226,7 @@ class GroupView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -198,14 +236,14 @@ class GroupView(APIView):
         password = data.get('password', '')
         image = request.FILES.get('image')
         
-        # تبدیل مقادیر boolean به درستی
+        # CONVERT BOOLEAN VALUES PROPERLY
         show_members = data.get('show_members', 'true').lower() == 'true'
         show_info = data.get('show_info', 'true').lower() == 'true'
         allow_join_requests = data.get('allow_join_requests', 'true').lower() == 'true'
 
         if not name:
             return Response(
-                {'status': 'error', 'message': 'نام گروه الزامی است'},
+                {'status': 'ERROR', 'message': 'GROUP NAME IS REQUIRED'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -224,21 +262,21 @@ class GroupView(APIView):
         group.members.add(user_id)
         group.admins.add(user_id)
         cache.delete(f'groups_{user_id}')
-        return Response({'status': 'success', 'group_id': group.id})
+        return Response({'status': 'SUCCESS', 'group_id': group.id})
 
 class GroupDetailView(APIView):
     def get(self, request, pk):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
         group = get_object_or_404(Group, pk=pk)
         if not group.members.filter(id=user_id).exists() and not group.allow_join_requests:
             return Response(
-                {'status': 'error', 'message': 'شما عضو این گروه نیستید و درخواست عضویت غیرفعال است'},
+                {'status': 'ERROR', 'message': 'YOU ARE NOT A MEMBER OF THIS GROUP AND JOIN REQUESTS ARE DISABLED'},
                 status=status.HTTP_403_FORBIDDEN
             )
             
@@ -257,7 +295,7 @@ class GroupJoinView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -268,52 +306,52 @@ class GroupJoinView(APIView):
         
         if group.members.filter(id=user_id).exists():
             return Response(
-                {'status': 'error', 'message': 'شما قبلاً عضو این گروه هستید'},
+                {'status': 'ERROR', 'message': 'YOU ARE ALREADY A MEMBER OF THIS GROUP'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if group.password and not group.check_password(password):
             if not group.allow_join_requests:
                 return Response(
-                    {'status': 'error', 'message': 'رمز عبور اشتباه است و درخواست عضویت غیرفعال است'},
+                    {'status': 'ERROR', 'message': 'INCORRECT PASSWORD AND JOIN REQUESTS ARE DISABLED'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-            # ایجاد درخواست عضویت
+            # CREATE JOIN REQUEST
             request, created = GroupJoinRequest.objects.get_or_create(
                 group=group,
                 user_id=user_id,
-                defaults={'status': 'pending'}
+                defaults={'status': 'PENDING'}
             )
             
             if created:
                 return Response({
-                    'status': 'success', 
-                    'message': 'درخواست عضویت شما ارسال شد و در انتظار تایید است'
+                    'status': 'SUCCESS', 
+                    'message': 'YOUR JOIN REQUEST HAS BEEN SENT AND IS PENDING APPROVAL'
                 })
             else:
                 return Response({
-                    'status': 'error',
-                    'message': 'شما قبلاً درخواست عضویت داده‌اید'
+                    'status': 'ERROR',
+                    'message': 'YOU HAVE ALREADY REQUESTED TO JOIN'
                 })
 
         group.members.add(user_id)
         cache.delete(f'groups_{user_id}')
-        return Response({'status': 'success', 'group_id': group.id})
+        return Response({'status': 'SUCCESS', 'group_id': group.id})
 
 class GroupAdminsView(APIView):
     def post(self, request, pk):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         group = get_object_or_404(Group, pk=pk)
         if group.creator_id != user_id:
             return Response(
-                {'status': 'error', 'message': 'فقط سازنده گروه می‌تواند ادمین‌ها را مدیریت کند'},
+                {'status': 'ERROR', 'message': 'ONLY THE GROUP CREATOR CAN MANAGE ADMINS'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -322,7 +360,7 @@ class GroupAdminsView(APIView):
         
         if not member_id:
             return Response(
-                {'status': 'error', 'message': 'شناسه کاربر الزامی است'},
+                {'status': 'ERROR', 'message': 'USER ID IS REQUIRED'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -330,35 +368,35 @@ class GroupAdminsView(APIView):
         
         if not group.members.filter(id=member_id).exists():
             return Response(
-                {'status': 'error', 'message': 'کاربر عضو گروه نیست'},
+                {'status': 'ERROR', 'message': 'USER IS NOT A GROUP MEMBER'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if action == 'add':
             if group.admins.filter(id=member_id).exists():
                 return Response(
-                    {'status': 'error', 'message': 'کاربر قبلاً ادمین است'},
+                    {'status': 'ERROR', 'message': 'USER IS ALREADY AN ADMIN'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             group.admins.add(member_id)
             return Response({
-                'status': 'success',
-                'message': 'کاربر با موفقیت به ادمین‌ها اضافه شد'
+                'status': 'SUCCESS',
+                'message': 'USER SUCCESSFULLY ADDED TO ADMINS'
             })
         elif action == 'remove':
             if not group.admins.filter(id=member_id).exists():
                 return Response(
-                    {'status': 'error', 'message': 'کاربر ادمین نیست'},
+                    {'status': 'ERROR', 'message': 'USER IS NOT AN ADMIN'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             group.admins.remove(member_id)
             return Response({
-                'status': 'success',
-                'message': 'کاربر با موفقیت از ادمین‌ها حذف شد'
+                'status': 'SUCCESS',
+                'message': 'USER SUCCESSFULLY REMOVED FROM ADMINS'
             })
         else:
             return Response(
-                {'status': 'error', 'message': 'عمل نامعتبر است'},
+                {'status': 'ERROR', 'message': 'INVALID ACTION'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -367,14 +405,14 @@ class GroupSettingsView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         group = get_object_or_404(Group, pk=pk)
         if not group.is_admin(User.objects.get(id=user_id)):
             return Response(
-                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند تنظیمات گروه را تغییر دهند'},
+                {'status': 'ERROR', 'message': 'ONLY ADMINS CAN CHANGE GROUP SETTINGS'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -389,8 +427,8 @@ class GroupSettingsView(APIView):
         group.save()
         cache.delete(f'groups_{user_id}')
         return Response({
-            'status': 'success',
-            'message': 'تنظیمات گروه با موفقیت به‌روزرسانی شد'
+            'status': 'SUCCESS',
+            'message': 'GROUP SETTINGS SUCCESSFULLY UPDATED'
         })
 
 class GroupJoinRequestView(APIView):
@@ -398,18 +436,18 @@ class GroupJoinRequestView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         group = get_object_or_404(Group, pk=pk)
         if not group.is_admin(User.objects.get(id=user_id)):
             return Response(
-                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند درخواست‌های عضویت را مشاهده کنند'},
+                {'status': 'ERROR', 'message': 'ONLY ADMINS CAN VIEW JOIN REQUESTS'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        requests = GroupJoinRequest.objects.filter(group=group, status='pending')
+        requests = GroupJoinRequest.objects.filter(group=group, status='PENDING')
         serializer = GroupJoinRequestSerializer(requests, many=True)
         return Response({'requests': serializer.data})
 
@@ -417,14 +455,14 @@ class GroupJoinRequestView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         group = get_object_or_404(Group, pk=pk)
         if not group.is_admin(User.objects.get(id=user_id)):
             return Response(
-                {'status': 'error', 'message': 'فقط ادمین‌ها می‌توانند درخواست‌های عضویت را تایید کنند'},
+                {'status': 'ERROR', 'message': 'ONLY ADMINS CAN APPROVE JOIN REQUESTS'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -435,22 +473,22 @@ class GroupJoinRequestView(APIView):
         
         if action == 'approve':
             group.members.add(join_request.user)
-            join_request.status = 'approved'
+            join_request.status = 'APPROVED'
             join_request.save()
             return Response({
-                'status': 'success',
-                'message': 'درخواست عضویت تایید شد'
+                'status': 'SUCCESS',
+                'message': 'JOIN REQUEST APPROVED'
             })
         elif action == 'reject':
-            join_request.status = 'rejected'
+            join_request.status = 'REJECTED'
             join_request.save()
             return Response({
-                'status': 'success',
-                'message': 'درخواست عضویت رد شد'
+                'status': 'SUCCESS',
+                'message': 'JOIN REQUEST REJECTED'
             })
         else:
             return Response(
-                {'status': 'error', 'message': 'عمل نامعتبر است'},
+                {'status': 'ERROR', 'message': 'INVALID ACTION'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -459,7 +497,7 @@ class MessageView(APIView):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -471,10 +509,11 @@ class MessageView(APIView):
             last_message_id = int(last_message_id)
         except ValueError:
             return Response(
-                {'status': 'error', 'message': 'شناسه پیام نامعتبر است'},
+                {'status': 'ERROR', 'message': 'INVALID MESSAGE ID'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # DATABASE MESSAGES FIRST
         messages = Message.objects.filter(id__gt=last_message_id).select_related('sender', 'recipient', 'group').prefetch_related('files').order_by('timestamp')
 
         if group_id:
@@ -482,13 +521,13 @@ class MessageView(APIView):
                 group_id = int(group_id)
                 if not Group.objects.filter(id=group_id, members__id=user_id).exists():
                     return Response(
-                        {'status': 'error', 'message': 'شما عضو این گروه نیستید'},
+                        {'status': 'ERROR', 'message': 'YOU ARE NOT A MEMBER OF THIS GROUP'},
                         status=status.HTTP_403_FORBIDDEN
                     )
                 messages = messages.filter(group_id=group_id)
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گروه نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID GROUP ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         elif recipient_id:
@@ -500,7 +539,7 @@ class MessageView(APIView):
                 )
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گیرنده نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID RECIPIENT ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         else:
@@ -510,14 +549,47 @@ class MessageView(APIView):
                 models.Q(group__members__id=user_id)
             )
 
+        # ADD CACHED MESSAGES
+        cached_messages = []
+        for msg_data in message_cache:
+            if group_id and msg_data.get('group_id') == int(group_id):
+                cached_messages.append(msg_data)
+            elif recipient_id and (
+                (msg_data.get('sender_id') == user_id and msg_data.get('recipient_id') == int(recipient_id)) or
+                (msg_data.get('sender_id') == int(recipient_id) and msg_data.get('recipient_id') == user_id)
+            ):
+                cached_messages.append(msg_data)
+            elif not group_id and not recipient_id:
+                if msg_data.get('sender_id') == user_id or msg_data.get('recipient_id') == user_id:
+                    cached_messages.append(msg_data)
+                elif msg_data.get('group_id') and Group.objects.filter(id=msg_data['group_id'], members__id=user_id).exists():
+                    cached_messages.append(msg_data)
+
+        # SERIALIZE DATABASE MESSAGES
         serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data)
+        serialized_data = serializer.data
+
+        # ADD CACHED MESSAGES TO RESPONSE
+        for msg_data in cached_messages:
+            serialized_data.append({
+                'id': None,  # CACHED MESSAGES DON'T YET HAVE A DATABASE ID
+                'sender': {'id': msg_data['sender_id']},
+                'content': msg_data['content'],
+                'group': {'id': msg_data.get('group_id')} if msg_data.get('group_id') else None,
+                'recipient': {'id': msg_data.get('recipient_id')} if msg_data.get('recipient_id') else None,
+                'timestamp': msg_data['delivered_at'].isoformat(),
+                'delivered_at': msg_data['delivered_at'].isoformat(),
+                'read_at': msg_data.get('read_at').isoformat() if msg_data.get('read_at') else None,
+                'files': [{'id': fid} for fid in msg_data.get('file_ids', [])]
+            })
+
+        return Response(serialized_data)
 
     def post(self, request):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -529,23 +601,28 @@ class MessageView(APIView):
 
         if not content and not file_ids:
             return Response(
-                {'status': 'error', 'message': 'محتوا یا فایل الزامی است'},
+                {'status': 'ERROR', 'message': 'CONTENT OR FILE IS REQUIRED'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        message_data = {'sender_id': user_id, 'content': content}
+        message_data = {
+            'sender_id': user_id,
+            'content': content,
+            'delivered_at': timezone.now(),
+            'file_ids': file_ids
+        }
         if group_id:
             try:
                 group_id = int(group_id)
                 if not Group.objects.filter(id=group_id, members__id=user_id).exists():
                     return Response(
-                        {'status': 'error', 'message': 'شما عضو این گروه نیستید'},
+                        {'status': 'ERROR', 'message': 'YOU ARE NOT A MEMBER OF THIS GROUP'},
                         status=status.HTTP_403_FORBIDDEN
                     )
                 message_data['group_id'] = group_id
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گروه نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID GROUP ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         if recipient_id:
@@ -553,41 +630,48 @@ class MessageView(APIView):
                 recipient_id = int(recipient_id)
                 if not User.objects.filter(id=recipient_id).exists():
                     return Response(
-                        {'status': 'error', 'message': 'گیرنده وجود ندارد'},
+                        {'status': 'ERROR', 'message': 'RECIPIENT DOES NOT EXIST'},
                         status=status.HTTP_404_NOT_FOUND
                     )
                 message_data['recipient_id'] = recipient_id
+                message_data['read_at'] = timezone.now()
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گیرنده نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID RECIPIENT ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        message = Message.objects.create(**message_data, delivered_at=timezone.now())
-        for file_id in file_ids:
-            file_obj = get_object_or_404(File, id=file_id)
-            file_obj.message = message
-            file_obj.save()
-        if recipient_id:
-            message.read_at = timezone.now()
-            message.save()
+        # ADD MESSAGE TO CACHE
+        message_cache.append(message_data)
+        
+        # RESPONSE IN SAME FORMAT AS DATABASE MESSAGES
+        response_data = {
+            'id': None,  # NOT YET STORED IN DATABASE
+            'sender': {'id': user_id},
+            'content': content,
+            'group': {'id': group_id} if group_id else None,
+            'recipient': {'id': recipient_id} if recipient_id else None,
+            'timestamp': message_data['delivered_at'].isoformat(),
+            'delivered_at': message_data['delivered_at'].isoformat(),
+            'read_at': message_data.get('read_at').isoformat() if message_data.get('read_at') else None,
+            'files': [{'id': fid} for fid in file_ids]
+        }
 
-        serializer = MessageSerializer(message)
-        return Response({'status': 'success', 'message_id': serializer.data['id'], 'message': serializer.data})
+        return Response({'status': 'SUCCESS', 'message_id': None, 'message': response_data})
 
 class MessageDetailView(APIView):
     def patch(self, request, pk):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         message = get_object_or_404(Message, pk=pk)
         if message.sender_id != user_id:
             return Response(
-                {'status': 'error', 'message': 'فقط صاحب پیام می‌تواند آن را ویرایش کند'},
+                {'status': 'ERROR', 'message': 'ONLY THE MESSAGE OWNER CAN EDIT IT'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -595,46 +679,46 @@ class MessageDetailView(APIView):
         content = data.get('content', '').strip()
         if not content:
             return Response(
-                {'status': 'error', 'message': 'پیام نمی‌تواند خالی باشد'},
+                {'status': 'ERROR', 'message': 'MESSAGE CANNOT BE EMPTY'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         message.content = content
         message.save()
         serializer = MessageSerializer(message)
-        return Response({'status': 'success', 'message': serializer.data})
+        return Response({'status': 'SUCCESS', 'message': serializer.data})
 
     def delete(self, request, pk):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         message = get_object_or_404(Message, pk=pk)
         if message.sender_id != user_id:
             return Response(
-                {'status': 'error', 'message': 'فقط صاحب پیام می‌تواند آن را حذف کند'},
+                {'status': 'ERROR', 'message': 'ONLY THE MESSAGE OWNER CAN DELETE IT'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         message.delete()
-        return Response({'status': 'success'})
+        return Response({'status': 'SUCCESS'})
 
 class UploadView(APIView):
     def post(self, request):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         files = request.FILES.getlist('files')
         if not files:
             return Response(
-                {'status': 'error', 'message': 'هیچ فایلی انتخاب نشده است'},
+                {'status': 'ERROR', 'message': 'NO FILE SELECTED'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -643,7 +727,7 @@ class UploadView(APIView):
         for file in files:
             if file.size > max_size:
                 return Response(
-                    {'status': 'error', 'message': f'فایل {file.name} بیش از 20 گیگابایت است'},
+                    {'status': 'ERROR', 'message': f'FILE {file.name} EXCEEDS 20GB'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -656,9 +740,9 @@ class UploadView(APIView):
                 file_url = default_storage.url(saved_path)
                 full_path = os.path.join(settings.MEDIA_ROOT, saved_path)
             except Exception as e:
-                logger.error(f"Error saving file {file.name}: {str(e)}")
+                logger.error(f"ERROR SAVING FILE {file.name}: {str(e)}")
                 return Response(
-                    {'status': 'error', 'message': f'خطا در ذخیره فایل {file.name}: {str(e)}'},
+                    {'status': 'ERROR', 'message': f'ERROR SAVING FILE {file.name}: {str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
@@ -674,11 +758,11 @@ class UploadView(APIView):
                         if default_storage.exists(full_path):
                             default_storage.delete(full_path)
                 except Exception as e:
-                    logger.error(f"Error compressing image {file.name}: {str(e)}")
+                    logger.error(f"ERROR COMPRESSING IMAGE {file.name}: {str(e)}")
                     if default_storage.exists(saved_path):
                         default_storage.delete(saved_path)
                     return Response(
-                        {'status': 'error', 'message': f'خطا در فشرده‌سازی تصویر {file.name}: {str(e)}'},
+                        {'status': 'ERROR', 'message': f'ERROR COMPRESSING IMAGE {file.name}: {str(e)}'},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
             elif file.content_type.startswith('video'):
@@ -690,22 +774,22 @@ class UploadView(APIView):
                 file_obj = File.objects.create(file=saved_path, file_type=file_type)
                 file_ids.append(file_obj.id)
             except Exception as e:
-                logger.error(f"Error creating File object for {saved_path}: {str(e)}")
+                logger.error(f"ERROR CREATING FILE OBJECT FOR {saved_path}: {str(e)}")
                 if default_storage.exists(saved_path):
                     default_storage.delete(saved_path)
                 return Response(
-                    {'status': 'error', 'message': f'خطا در ثبت فایل {file.name}: {str(e)}'},
+                    {'status': 'ERROR', 'message': f'ERROR REGISTERING FILE {file.name}: {str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-        return Response({'status': 'success', 'file_ids': file_ids})
+        return Response({'status': 'SUCCESS', 'file_ids': file_ids})
 
 class MessageSeenView(APIView):
     def post(self, request):
         user_id = request.session.get('user_id')
         if not user_id:
             return Response(
-                {'status': 'error', 'message': 'کاربر وارد نشده است'},
+                {'status': 'ERROR', 'message': 'USER NOT LOGGED IN'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -723,10 +807,10 @@ class MessageSeenView(APIView):
                         message.delivered_at = timezone.now()
                     message.read_at = timezone.now()
                     message.save()
-                return Response({'status': 'success'})
+                return Response({'status': 'SUCCESS'})
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گیرنده نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID RECIPIENT ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         elif group_id:
@@ -734,7 +818,7 @@ class MessageSeenView(APIView):
                 group_id = int(group_id)
                 if not Group.objects.filter(id=group_id, members__id=user_id).exists():
                     return Response(
-                        {'status': 'error', 'message': 'شما عضو این گروه نیستید'},
+                        {'status': 'ERROR', 'message': 'YOU ARE NOT A MEMBER OF THIS GROUP'},
                         status=status.HTTP_403_FORBIDDEN
                     )
                 messages = Message.objects.filter(
@@ -745,14 +829,14 @@ class MessageSeenView(APIView):
                         message.delivered_at = timezone.now()
                     message.read_at = timezone.now()
                     message.save()
-                return Response({'status': 'success'})
+                return Response({'status': 'SUCCESS'})
             except ValueError:
                 return Response(
-                    {'status': 'error', 'message': 'شناسه گروه نامعتبر است'},
+                    {'status': 'ERROR', 'message': 'INVALID GROUP ID'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         return Response(
-            {'status': 'error', 'message': 'شناسه گیرنده یا گروه الزامی است'},
+            {'status': 'ERROR', 'message': 'RECIPIENT OR GROUP ID IS REQUIRED'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -764,4 +848,6 @@ class LogoutView(APIView):
             user.is_online = False
             user.save()
             request.session.flush()
-        return Response({'status': 'success'})
+        return Response({'status': 'SUCCESS'})
+
+threading.Thread(target=flush_messages_to_db, daemon=True).start()

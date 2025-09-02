@@ -76,7 +76,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         if not data.get('content') and not data.get('file_ids'):
-            raise serializers.ValidationError("محتوا یا فایل الزامی است")
+            raise serializers.ValidationError("Content or file is required")
         return data
 
 class GroupJoinRequestSerializer(serializers.ModelSerializer):
